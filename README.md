@@ -41,22 +41,22 @@ A demo **Crash-style** game (points only) with **2 bet slots**, real-time multip
 
 ## Project Structure
 
-- **backend/**
-  - prisma/schema.prisma
-  - src/
-  - index.js
-  - gameEngine.js
-  - provablyFair.js
-  - db.js
-  - routes/
-  - socket/
-- **frontend/**
-  - src/
-  - pages/
-  - App.jsx
-  - main.jsx
-- **docker-compose.yml**
-- **README.md**
+**backend/**
+   prisma/schema.prisma
+   src/
+   index.js
+   gameEngine.js
+   provablyFair.js
+   db.js
+   routes/
+   socket/
+**frontend/**
+   src/
+   pages/
+   App.jsx
+   main.jsx
+**docker-compose.yml**
+**README.md**
 
 ## Requirements
 
