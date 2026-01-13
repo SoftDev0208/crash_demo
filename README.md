@@ -41,7 +41,7 @@ A demo **Crash-style** game (points only) with **2 bet slots**, real-time multip
 
 ## Project Structure
 
-**backend/**
+ # backend/
    prisma/schema.prisma
    src/
    index.js
@@ -50,13 +50,13 @@ A demo **Crash-style** game (points only) with **2 bet slots**, real-time multip
    db.js
    routes/
    socket/
-**frontend/**
+ # frontend/
    src/
    pages/
    App.jsx
    main.jsx
-**docker-compose.yml**
-**README.md**
+ # docker-compose.yml
+ # README.md**
 
 ## Requirements
 
