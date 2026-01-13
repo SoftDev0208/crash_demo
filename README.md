@@ -1,0 +1,35 @@
+Project structure
+
+crash-demo/
+  backend/
+    package.json
+    .env.example
+    prisma/
+      schema.prisma
+    src/
+      index.js
+      gameEngine.js
+      provablyFair.js
+      db.js
+      routes/
+        auth.js
+        bonuses.js
+        referrals.js
+        leaderboard.js
+      socket/
+        crashNamespace.js
+  frontend/
+    package.json
+    vite.config.js
+    src/
+      main.jsx
+      api.js
+      socket.js
+      App.jsx
+      pages/
+        Crash.jsx
+        Leaderboard.jsx
+        Bonuses.jsx
+        Referrals.jsx
+  docker-compose.yml
+  README.md
