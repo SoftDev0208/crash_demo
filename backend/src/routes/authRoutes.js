@@ -1,0 +1,64 @@
+import { Router } from "express";
+import { prisma } from "../db.js";
+import { hashPassword, verifyPassword } from "../auth/password.js";
+import { signJwt } from "../auth/jwt.js";
+import { nanoid } from "nanoid";
+import { requireAuth } from "../middleware/httpAuth.js";
+
+export const authRoutes = Router();
+
+authRoutes.post("/register", async (req, res) => {
+  const { username, password, ref } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: "username/password required" });
+
+  const passwordHash = await hashPassword(password);
+
+  // optional referral
+  let referredByUserId = null;
+  if (ref) {
+    const referrer = await prisma.user.findUnique({ where: { referralCode: String(ref) } });
+    if (referrer) referredByUserId = referrer.id;
+  }
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        username,
+        passwordHash,
+        referralCode: nanoid(8),
+        referredByUserId
+      },
+      select: { id: true, username: true, referralCode: true, pointsBalance: true }
+    });
+
+    const token = signJwt({ userId: user.id });
+    res.json({ token, user });
+  } catch (e) {
+    return res.status(400).json({ error: "Username already exists or invalid data" });
+  }
+});
+
+authRoutes.post("/login", async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: "username/password required" });
+
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user) return res.status(401).json({ error: "Invalid credentials" });
+
+  const ok = await verifyPassword(password, user.passwordHash);
+  if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+
+  const token = signJwt({ userId: user.id });
+  res.json({
+    token,
+    user: { id: user.id, username: user.username, referralCode: user.referralCode, pointsBalance: user.pointsBalance }
+  });
+});
+
+authRoutes.get("/me", requireAuth, async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.userId },
+    select: { id: true, username: true, referralCode: true, pointsBalance: true, createdAt: true }
+  });
+  res.json({ user });
+});
