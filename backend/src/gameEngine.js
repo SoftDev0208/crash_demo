@@ -1,4 +1,5 @@
 import { prisma } from "./db.js";
+import { pushCrash, getHistory } from "./historyStore.js";
 import { crashMultiplierFromSeeds, newServerSeed, sha256Hex } from "./provablyFair.js";
 import { activateBetsForRound, cashoutBet, settleLosses } from "./services/bettingService.js";
 
@@ -181,6 +182,9 @@ export function createGameEngine({ io, config }) {
     await settleLosses(current.roundId);
 
     broadcastCrash(current.crashMultiplier);
+
+    pushCrash(current.crashMultiplier);
+    io.of("/crash").emit("history:update", { items: getHistory() });
 
     current.phase = "COOLDOWN";
     broadcastRoundState();

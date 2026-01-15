@@ -7,6 +7,17 @@ import { requireAuth } from "../middleware/httpAuth.js";
 
 export const authRoutes = Router();
 
+function toUserDTO(user) {
+  return {
+    id: user.id,
+    username: user.username,
+    referralCode: user.referralCode,
+    // BigInt -> string for JSON
+    pointsBalance: user.pointsBalance?.toString?.() ?? String(user.pointsBalance),
+    createdAt: user.createdAt,
+  };
+}
+
 authRoutes.post("/register", async (req, res) => {
   const { username, password, ref } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: "username/password required" });
@@ -26,14 +37,13 @@ authRoutes.post("/register", async (req, res) => {
         username,
         passwordHash,
         referralCode: nanoid(8),
-        referredByUserId
+        referredByUserId,
       },
-      select: { id: true, username: true, referralCode: true, pointsBalance: true }
     });
 
     const token = signJwt({ userId: user.id });
-    res.json({ token, user });
-  } catch (e) {
+    return res.json({ token, user: toUserDTO(user) });
+  } catch {
     return res.status(400).json({ error: "Username already exists or invalid data" });
   }
 });
@@ -49,16 +59,11 @@ authRoutes.post("/login", async (req, res) => {
   if (!ok) return res.status(401).json({ error: "Invalid credentials" });
 
   const token = signJwt({ userId: user.id });
-  res.json({
-    token,
-    user: { id: user.id, username: user.username, referralCode: user.referralCode, pointsBalance: user.pointsBalance }
-  });
+  return res.json({ token, user: toUserDTO(user) });
 });
 
 authRoutes.get("/me", requireAuth, async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { id: req.user.userId },
-    select: { id: true, username: true, referralCode: true, pointsBalance: true, createdAt: true }
-  });
-  res.json({ user });
+  const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
+  if (!user) return res.status(404).json({ error: "User not found" });
+  return res.json({ user: toUserDTO(user) });
 });

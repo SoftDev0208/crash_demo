@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { getHistory } from "./historyStore.js";
 import express from "express";
 import cors from "cors";
 import http from "http";
@@ -51,6 +52,8 @@ nsp.on("connection", async (socket) => {
     const bets = await getUserBetsForRound(userId, roundId);
     socket.emit("bets:update", { roundId, userId, bets });
   }
+
+  socket.emit("history:update", { items: getHistory() });
 
   socket.on("bet:place", async (payload, cb) => {
     try {
