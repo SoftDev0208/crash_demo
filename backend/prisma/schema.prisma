@@ -3,8 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "mysql"
 }
 
 enum RoundPhase {
@@ -44,13 +43,17 @@ model User {
   clientSeed       String   @default("default-client-seed")
   referralCode     String   @unique
   referredByUserId String?
+
   referredBy       User?    @relation("UserRef", fields: [referredByUserId], references: [id])
   referrals        User[]   @relation("UserRef")
 
   bets             Bet[]
   ledger           LedgerEntry[]
   bonuses          Bonus[]
-  referralRewards  ReferralReward[] @relation("ReferrerRewards")
+
+  // BOTH sides of ReferralReward relations:
+  referrerRewards  ReferralReward[] @relation("ReferrerRewards")
+  referredRewards  ReferralReward[] @relation("ReferredRewards")
 
   createdAt        DateTime @default(now())
 }
@@ -60,7 +63,7 @@ model Round {
   nonce           BigInt     @unique
   serverSeedHash  String
   serverSeed      String?
-  crashMultiplier Decimal     @db.Decimal(10, 2)
+  crashMultiplier Decimal    @db.Decimal(10, 2)
   phase           RoundPhase
 
   bettingStartAt  DateTime
@@ -69,23 +72,23 @@ model Round {
   crashAt         DateTime?
 
   bets            Bet[]
-  createdAt       DateTime @default(now())
+  createdAt       DateTime   @default(now())
 }
 
 model Bet {
-  id              String   @id @default(uuid())
-  roundId         String
-  userId          String
-  slotIndex       Int
-  amount          BigInt
-  autoCashout     Decimal? @db.Decimal(10, 2)
-  status          BetStatus
-  cashoutMultiplier Decimal? @db.Decimal(10, 2)
-  payout          BigInt   @default(0)
-  placedAt        DateTime @default(now())
+  id                String    @id @default(uuid())
+  roundId           String
+  userId            String
+  slotIndex         Int
+  amount            BigInt
+  autoCashout       Decimal?  @db.Decimal(10, 2)
+  status            BetStatus
+  cashoutMultiplier Decimal?  @db.Decimal(10, 2)
+  payout            BigInt    @default(0)
+  placedAt          DateTime  @default(now())
 
-  round           Round    @relation(fields: [roundId], references: [id])
-  user            User     @relation(fields: [userId], references: [id])
+  round             Round     @relation(fields: [roundId], references: [id])
+  user              User      @relation(fields: [userId], references: [id])
 
   @@unique([roundId, userId, slotIndex])
   @@index([userId])
@@ -123,11 +126,14 @@ model ReferralReward {
   id              String   @id @default(uuid())
   referrerUserId  String
   referredUserId  String
-  status          String   @default("PENDING") // PENDING|PAID
+  status          String   @default("PENDING")
   rewardPoints    BigInt
   createdAt       DateTime @default(now())
 
   referrer        User     @relation("ReferrerRewards", fields: [referrerUserId], references: [id])
+  referred        User     @relation("ReferredRewards", fields: [referredUserId], references: [id])
 
   @@unique([referrerUserId, referredUserId])
+  @@index([referrerUserId])
+  @@index([referredUserId])
 }
