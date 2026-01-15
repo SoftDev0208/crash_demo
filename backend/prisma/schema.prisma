@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum RoundPhase {
+  BETTING
+  FLIGHT
+  CRASH
+  COOLDOWN
+}
+
+enum BetStatus {
+  PLACED
+  ACTIVE
+  CASHED_OUT
+  LOST
+  CANCELED
+}
+
+enum LedgerType {
+  BET_PLACE
+  BET_CANCEL
+  CASHOUT
+  LOSS
+  BONUS
+  REFERRAL
+}
+
+enum BonusType {
+  DAILY
+  WELCOME
+}
+
+model User {
+  id               String  @id @default(uuid())
+  username         String  @unique
+  passwordHash     String
+  pointsBalance    BigInt  @default(10000)
+  clientSeed       String  @default("default-client-seed")
+  referralCode     String  @unique
+  referredByUserId String?
+
+  referredBy User?  @relation("UserRef", fields: [referredByUserId], references: [id])
+  referrals  User[] @relation("UserRef")
+
+  bets    Bet[]
+  ledger  LedgerEntry[]
+  bonuses Bonus[]
+
+  referrerRewards ReferralReward[] @relation("ReferrerRewards")
+  referredRewards ReferralReward[] @relation("ReferredRewards")
+
+  createdAt DateTime @default(now())
+}
+
+model Round {
+  id              String     @id @default(uuid())
+  nonce           BigInt     @unique
+  serverSeedHash  String
+  serverSeed      String?
+  crashMultiplier Decimal    @db.Decimal(10, 2)
+  phase           RoundPhase
+
+  bettingStartAt DateTime
+  bettingEndAt   DateTime
+  flightStartAt  DateTime?
+  crashAt        DateTime?
+
+  bets      Bet[]
+  createdAt DateTime @default(now())
+}
+
+model Bet {
+  id                String    @id @default(uuid())
+  roundId           String
+  userId            String
+  slotIndex         Int
+  amount            BigInt
+  autoCashout       Decimal?  @db.Decimal(10, 2)
+  status            BetStatus
+  cashoutMultiplier Decimal?  @db.Decimal(10, 2)
+  payout            BigInt    @default(0)
+  placedAt          DateTime  @default(now())
+
+  round Round @relation(fields: [roundId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([roundId, userId, slotIndex])
+  @@index([userId])
+  @@index([roundId])
+}
+
+model LedgerEntry {
+  id           String     @id @default(uuid())
+  userId       String
+  roundId      String?
+  type         LedgerType
+  delta        BigInt
+  balanceAfter BigInt
+  createdAt    DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model Bonus {
+  id          String    @id @default(uuid())
+  userId      String
+  type        BonusType
+  amount      BigInt
+  availableAt DateTime
+  claimedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, type, availableAt])
+}
+
+model ReferralReward {
+  id             String   @id @default(uuid())
+  referrerUserId String
+  referredUserId String
+  status         String   @default("PENDING")
+  rewardPoints   BigInt
+  createdAt      DateTime @default(now())
+
+  referrer User @relation("ReferrerRewards", fields: [referrerUserId], references: [id])
+  referred User @relation("ReferredRewards", fields: [referredUserId], references: [id])
+
+  @@unique([referrerUserId, referredUserId])
+  @@index([referrerUserId])
+  @@index([referredUserId])
+}
