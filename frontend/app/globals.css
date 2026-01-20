@@ -9,6 +9,9 @@
   --danger: #ff4d4f;
   --ok: #2ecc71;
   --accent: #7c5cff;
+  --trendLow: #ff2222;   /* red */
+  --trendMid: #22c55e;  /* green */
+  --trendHigh: #f0bf10; /* yellow */
 }
 
 * { box-sizing: border-box; }
@@ -32,7 +35,6 @@ hr {
 }
 
 .container {
-  max-width: 980px;
   margin: 0 auto;
   padding: 16px;
 }

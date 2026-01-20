@@ -132,26 +132,23 @@ export async function cashoutBet({ userId, roundId, slotIndex, multiplier }) {
 }
 
 export async function settleLosses(roundId) {
-  // Mark remaining ACTIVE bets as LOST (amount already debited at place time)
-  // Add LOSS ledger entry with delta 0 for audit
-  const activeBets = await prisma.bet.findMany({ where: { roundId, status: "ACTIVE" } });
-  if (activeBets.length === 0) return;
-
-  await prisma.$transaction(async (tx) => {
-    for (const bet of activeBets) {
-      await tx.bet.update({ where: { id: bet.id }, data: { status: "LOST" } });
-      await tx.ledgerEntry.create({
-        data: {
-          userId: bet.userId,
-          roundId,
-          type: "LOSS",
-          delta: 0n,
-          balanceAfter: (await tx.user.findUnique({ where: { id: bet.userId } })).pointsBalance
-        }
-      });
-    }
+  const activeBets = await prisma.bet.findMany({
+    where: { roundId, status: "ACTIVE" },
+    select: { id: true, userId: true },
   });
+
+  if (activeBets.length === 0) return [];
+
+  const userIds = [...new Set(activeBets.map(b => b.userId))];
+
+  await prisma.bet.updateMany({
+    where: { roundId, status: "ACTIVE" },
+    data: { status: "LOST" },
+  });
+
+  return userIds;
 }
+
 
 export async function getUserBetsForRound(userId, roundId) {
   return prisma.bet.findMany({

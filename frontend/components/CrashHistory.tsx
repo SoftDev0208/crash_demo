@@ -1,38 +1,45 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-function colorFor(m: number) {
-  // simple vibe similar to crash sites: low=red, mid=purple, high=green-ish
-  if (m < 2) return "rgba(255,77,79,0.22)";
-  if (m < 10) return "rgba(124,92,255,0.22)";
-  return "rgba(46,204,113,0.22)";
-}
+import React from "react";
+import styles from "./CrashHistory.module.css";
 
-export default function CrashHistory({ items }: { items: number[] }) {
+export default function CrashHistory(props: {
+  items: number[];
+  max?: number;
+  rightSlot?: React.ReactNode;
+}) {
+  const { items, max = 20, rightSlot } = props;
+
+  const list = Array.isArray(items) ? items.slice(0, max) : [];
+
   return (
-    <div className="card" style={{ padding: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <b>History</b>
-        <span style={{ color: "var(--muted)", fontSize: 13 }}>Last {items.length}</span>
-      </div>
+    <div className={`card ${styles.wrap}`}>
+      <div className={styles.row}>
+        <div className={styles.strip} aria-label="Crash history strip">
+          {list.map((m, idx) => {
+            const n = Number(m);
+            const bg =
+              n < 2
+                ? "rgba(255,22,22,0.7)"
+                : n < 10
+                ? "rgba(34,197,94,0.7)"
+                : "rgba(247,208,70,0.7)";
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-        {items.map((m, idx) => (
-          <span
-            key={`${m}-${idx}`}
-            className="mono"
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              border: "1px solid var(--border)",
-              background: colorFor(m),
-              fontWeight: 800,
-            }}
-            title={`#${idx + 1}`}
-          >
-            {Number(m).toFixed(2)}x
-          </span>
-        ))}
+            return (
+              <div
+                key={`${n}-${idx}`}
+                className={`${styles.item} mono`}
+                style={{ backgroundColor: bg }}
+                title={`${n.toFixed(2)}x`}
+              >
+                <span className={styles.dot} />
+                {n.toFixed(2)}x
+              </div>
+            );
+          })}
+        </div>
+
+        <div className={styles.right}>{rightSlot}</div>
       </div>
     </div>
   );

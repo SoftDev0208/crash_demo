@@ -3,10 +3,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import styles from "./CrashPage.module.css";
 import { connectCrashSocket, disconnectCrashSocket } from "@/lib/socket";
 import { getToken } from "@/lib/auth";
 import CrashGraph from "@/components/CrashGraph";
 import CrashHistory from "@/components/CrashHistory";
+import TrendPopover from "@/components/TrendPopover";
+import { apiGet } from "@/lib/api";
 
 export default function HomePage() {
   const [token, setToken] = useState<string | null>(null);
@@ -17,26 +20,91 @@ export default function HomePage() {
   const [status, setStatus] = useState<string>("Not connected");
   const [error, setError] = useState<string>("");
 
-  // Slot inputs
-  const [amountA, setAmountA] = useState("100");
-  const [autoA, setAutoA] = useState("");
-  const [amountB, setAmountB] = useState("100");
-  const [autoB, setAutoB] = useState("");
+  // ONE bet inputs
+  const [amount, setAmount] = useState("100");
+  const [autoCashout, setAutoCashout] = useState("");
 
-  // Prevent double-connect in dev StrictMode
+  const [pointsBalance, setPointsBalance] = useState<string>("0");
+
   const connectedRef = useRef(false);
 
-  // Graph + history state
   const [history, setHistory] = useState<number[]>([]);
   const [points, setPoints] = useState<{ t: number; m: number }[]>([]);
   const [crashAt, setCrashAt] = useState<number | null>(null);
 
-  // Read token once (microtask avoids strict lint warning)
+  const [mode, setMode] = useState<"manual" | "auto">("manual");
+
+  // next-round queue
+  const [queuedNext, setQueuedNext] = useState(false);
+  const queuedNextRef = useRef(false);
+
+  // track current bet in ref (prevents stale closures)
+  const betRef = useRef<any>(null);
+
+  // trend popover
+  const trendBtnRef = useRef<HTMLSpanElement | null>(null);
+  const [trendOpen, setTrendOpen] = useState(false);
+
+  const lastRoundIdRef = useRef<string | null>(null);
+  const lastPhaseRef = useRef<string | null>(null);
+
   useEffect(() => {
     queueMicrotask(() => setToken(getToken()));
   }, []);
 
-  // Connect socket
+  // ONE bet only (slotIndex 0) — robust even if slotIndex is string
+  const bet = useMemo(() => {
+    return bets.find((b) => Number(b?.slotIndex) === 0) || null;
+  }, [bets]);
+
+  useEffect(() => {
+    betRef.current = bet;
+  }, [bet]);
+
+  useEffect(() => {
+    queuedNextRef.current = queuedNext;
+  }, [queuedNext]);
+
+  // if a bet appears, clear queued mode automatically
+  useEffect(() => {
+    if (bet && queuedNext) setQueuedNext(false);
+  }, [bet, queuedNext]);
+
+  async function emitWithAck(event: string, payload: any) {
+    setError("");
+    if (!token) {
+      setError("No token. Go to /auth and login/register first.");
+      return { ok: false, error: "NO_TOKEN" };
+    }
+    const s = connectCrashSocket(token);
+    return new Promise<any>((resolve) => s.emit(event, payload, (resp: any) => resolve(resp)));
+  }
+
+  async function placeBet() {
+    if (!round?.roundId) return setError("No round yet.");
+
+    const resp = await emitWithAck("bet:place", {
+      roundId: round.roundId,
+      slotIndex: 0,
+      amount: Number(amount),
+      autoCashout: autoCashout ? Number(autoCashout) : null,
+    });
+
+    if (!resp?.ok) setError(resp?.error || "Failed");
+  }
+
+  async function cancelBet() {
+    if (!round?.roundId) return setError("No round yet.");
+    const resp = await emitWithAck("bet:cancel", { roundId: round.roundId, slotIndex: 0 });
+    if (!resp?.ok) setError(resp?.error || "Failed");
+  }
+
+  async function cashoutBet() {
+    if (!round?.roundId) return setError("No round yet.");
+    const resp = await emitWithAck("bet:cashout", { roundId: round.roundId, slotIndex: 0 });
+    if (!resp?.ok) setError(resp?.error || "Failed");
+  }
+
   useEffect(() => {
     if (!token) return;
     if (connectedRef.current) return;
@@ -44,21 +112,63 @@ export default function HomePage() {
 
     const s = connectCrashSocket(token);
 
+    // initial balance fetch
+    (async () => {
+      try {
+        const data = await apiGet<{ user: any }>("/api/auth/me", token);
+        setPointsBalance(String(data.user?.pointsBalance ?? "0"));
+      } catch {}
+    })();
+
     const onConnect = () => setStatus("Connected");
     const onConnectError = (err: any) => setStatus(`Connect error: ${err?.message || String(err)}`);
     const onDisconnect = () => setStatus("Disconnected");
 
+    const requestBetsRefresh = (roundId: string) => {
+      // If your backend has no handler, it will just do nothing (safe)
+      try {
+        s.emit("bets:refresh", { roundId });
+      } catch {}
+    };
+
     const onRoundState = (data: any) => {
       setRound(data);
-      setCrashAt(null);
 
-      // New round => reset graph
-      setPoints([]);
-      if (data?.phase === "BETTING" || data?.phase === "COOLDOWN") setMultiplier(1.0);
+      const roundId = String(data?.roundId || "");
+      const phase = String(data?.phase || "");
+
+      // reset graph + bets only when NEW round id comes
+      const lastRound = lastRoundIdRef.current;
+      if (roundId && roundId !== lastRound) {
+        lastRoundIdRef.current = roundId;
+        setCrashAt(null);
+        setPoints([]);
+        setMultiplier(1.0);
+        setBets([]); // IMPORTANT: clear old bet so new round can bet again
+      }
+
+      // request refresh when phase changes (fix button stuck issues)
+      const lastPhase = lastPhaseRef.current;
+      if (phase && phase !== lastPhase) {
+        lastPhaseRef.current = phase;
+        if (roundId) requestBetsRefresh(roundId);
+      }
+
+      // reset multiplier in BETTING
+      if (phase === "BETTING") setMultiplier(1.0);
+
+      // queued bet: auto-place when BETTING opens
+      if (phase === "BETTING") {
+        if (queuedNextRef.current && !betRef.current) {
+          queuedNextRef.current = false;
+          setQueuedNext(false);
+          queueMicrotask(() => placeBet());
+        }
+      }
     };
 
     const onTick = (t: any) => {
-      const m = Number(t.multiplier || 1); // ✅ FIX: define m
+      const m = Number(t.multiplier || 1);
       setMultiplier(m);
 
       setPoints((prev) => {
@@ -76,9 +186,15 @@ export default function HomePage() {
     };
 
     const onBetsUpdate = (payload: any) => setBets(payload?.bets || []);
-
-    const onHistoryUpdate = (h: any) => {
+    const onHistoryUpdate = (h: any) =>
       setHistory(Array.isArray(h?.items) ? h.items.map((x: any) => Number(x)) : []);
+    const onBalanceUpdate = (b: any) => setPointsBalance(String(b?.pointsBalance ?? "0"));
+
+    const onBalanceRefresh = async () => {
+      try {
+        const data = await apiGet<{ user: any }>("/api/auth/me", token);
+        setPointsBalance(String(data.user?.pointsBalance ?? "0"));
+      } catch {}
     };
 
     s.on("connect", onConnect);
@@ -90,6 +206,8 @@ export default function HomePage() {
     s.on("round:crash", onCrash);
     s.on("bets:update", onBetsUpdate);
     s.on("history:update", onHistoryUpdate);
+    s.on("balance:update", onBalanceUpdate);
+    s.on("balance:refresh", onBalanceRefresh);
 
     return () => {
       connectedRef.current = false;
@@ -103,220 +221,228 @@ export default function HomePage() {
         s.off("round:crash", onCrash);
         s.off("bets:update", onBetsUpdate);
         s.off("history:update", onHistoryUpdate);
+        s.off("balance:update", onBalanceUpdate);
+        s.off("balance:refresh", onBalanceRefresh);
       } catch {}
       disconnectCrashSocket();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const canBet = round?.phase === "BETTING";
-  const canCashout = round?.phase === "FLIGHT";
+  // Big button behavior (with queue support)
+  const bigAction = useMemo(() => {
+    const phase = String(round?.phase || "");
 
-  function betForSlot(slotIndex: number) {
-    return bets.find((b) => b.slotIndex === slotIndex) || null;
-  }
-
-  async function emitWithAck(event: string, payload: any) {
-    setError("");
-    if (!token) {
-      setError("No token. Go to /auth and login/register first.");
-      return { ok: false, error: "NO_TOKEN" };
+    if (!token || !round?.roundId) {
+      return { label: "Login first", disabled: true, onClick: async () => {} };
     }
-    const s = connectCrashSocket(token);
-    return new Promise<any>((resolve) => {
-      s.emit(event, payload, (resp: any) => resolve(resp));
-    });
-  }
 
-  async function place(slotIndex: 0 | 1) {
-    if (!round?.roundId) return setError("No round yet.");
-    const amount = slotIndex === 0 ? amountA : amountB;
-    const auto = slotIndex === 0 ? autoA : autoB;
+    if (phase === "BETTING") {
+      if (!bet) return { label: "Bet", disabled: false, onClick: placeBet };
+      if (bet.status === "PLACED") return { label: "Cancel", disabled: false, onClick: cancelBet };
+      return { label: "Waiting…", disabled: true, onClick: async () => {} };
+    }
 
-    const resp = await emitWithAck("bet:place", {
-      roundId: round.roundId,
-      slotIndex,
-      amount: Number(amount),
-      autoCashout: auto ? Number(auto) : null,
-    });
+    if (phase === "FLIGHT") {
+      if (bet?.status === "ACTIVE") {
+        return { label: `Cashout @ ${multiplier.toFixed(2)}x`, disabled: false, onClick: cashoutBet };
+      }
+      return { label: "In Flight", disabled: true, onClick: async () => {} };
+    }
 
-    if (!resp?.ok) setError(resp?.error || "Failed");
-  }
+    // CRASH / COOLDOWN: allow queue toggle if no bet exists for this round
+    if (!bet) {
+      if (!queuedNext) return { label: "Bet (Next Round)", disabled: false, onClick: async () => setQueuedNext(true) };
+      return { label: "Cancel (Next Round)", disabled: false, onClick: async () => setQueuedNext(false) };
+    }
 
-  async function cancel(slotIndex: 0 | 1) {
-    if (!round?.roundId) return setError("No round yet.");
-    const resp = await emitWithAck("bet:cancel", { roundId: round.roundId, slotIndex });
-    if (!resp?.ok) setError(resp?.error || "Failed");
-  }
-
-  async function cashout(slotIndex: 0 | 1) {
-    if (!round?.roundId) return setError("No round yet.");
-    const resp = await emitWithAck("bet:cashout", { roundId: round.roundId, slotIndex });
-    if (!resp?.ok) setError(resp?.error || "Failed");
-  }
-
-  const slotA = betForSlot(0);
-  const slotB = betForSlot(1);
+    return { label: "Waiting…", disabled: true, onClick: async () => {} };
+  }, [token, round?.roundId, round?.phase, bet, multiplier, queuedNext, amount, autoCashout]);
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div className="card">
-        <div className="row">
-          <div>
-            <h3 style={{ margin: 0 }}>Crash</h3>
-            <div className="badge">
-              <span>Status:</span> <b>{status}</b>
+    <div className={styles.root}>
+      {/* LEFT */}
+      <div className={styles.left}>
+        <div className="card" style={{ marginTop: 10, padding: 12 }}>
+          <b>Crash</b>
+          <div style={{ display: "grid", gap: 6, marginTop: 10, color: "var(--muted)" }}>
+            <div>
+              Status: <b style={{ color: "inherit" }}>{status}</b>
             </div>
-            <div style={{ marginTop: 8, color: "var(--muted)" }}>
-              {!token ? (
-                <>
-                  No token found. Go to <Link href="/auth">/auth</Link> and login/register first.
-                </>
-              ) : (
-                <>
-                  Phase: <b>{round?.phase || "-"}</b>
-                </>
-              )}
+            <div>
+              Points:{" "}
+              <b className="mono" style={{ color: "inherit" }}>
+                {pointsBalance}
+              </b>
             </div>
-          </div>
-
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 42, fontWeight: 900 }}>{Number(multiplier).toFixed(2)}x</div>
-            <div style={{ color: "var(--muted)" }} className="mono">
-              Round: {round?.roundId ? String(round.roundId).slice(0, 8) : "-"}…
+            <div>
+              Phase: <b style={{ color: "inherit" }}>{round?.phase || "-"}</b>
             </div>
           </div>
         </div>
       </div>
 
-      {error && <div className="card error">{error}</div>}
-
-      {/* ✅ History + Graph */}
-      <CrashHistory items={history} />
-      <CrashGraph phase={round?.phase || "-"} points={points} crashAt={crashAt} />
-
-      <div className="grid2">
-        <BetPanel
-          title="Bet A (slot 0)"
-          bet={slotA}
-          canBet={!!canBet}
-          canCashout={!!canCashout}
-          amount={amountA}
-          setAmount={setAmountA}
-          autoCashout={autoA}
-          setAutoCashout={setAutoA}
-          onPlace={() => place(0)}
-          onCancel={() => cancel(0)}
-          onCashout={() => cashout(0)}
-          liveMultiplier={multiplier}
+      {/* CENTER */}
+      <div className={styles.center}>
+        {/* ✅ Use CrashHistory component */}
+        <CrashHistory
+          items={history}
+          max={19}
+          rightSlot={
+            <span
+              ref={trendBtnRef}
+              className="badge"
+              style={{ cursor: "pointer", userSelect: "none" }}
+              onClick={() => setTrendOpen((v) => !v)}
+              title="Trend"
+            >
+              ▦
+            </span>
+          }
         />
 
-        <BetPanel
-          title="Bet B (slot 1)"
-          bet={slotB}
-          canBet={!!canBet}
-          canCashout={!!canCashout}
-          amount={amountB}
-          setAmount={setAmountB}
-          autoCashout={autoB}
-          setAutoCashout={setAutoB}
-          onPlace={() => place(1)}
-          onCancel={() => cancel(1)}
-          onCashout={() => cashout(1)}
-          liveMultiplier={multiplier}
+        {/* ✅ Render TrendPopover (it was imported but not used before) */}
+        <TrendPopover
+          open={trendOpen}
+          anchorRef={trendBtnRef}
+          items={history}
+          onClose={() => setTrendOpen(false)}
         />
-      </div>
 
-      <div className="card">
-        <div className="row">
-          <div>
-            <b>Round Info</b>
-            <div style={{ color: "var(--muted)", marginTop: 6 }}>
-              Nonce: <span className="mono">{round?.nonce ?? "-"}</span>
-              {"  |  "}
-              Commit:{" "}
-              <span className="mono">
-                {round?.serverSeedHash ? String(round.serverSeedHash).slice(0, 14) : "-"}…
-              </span>
-            </div>
+        {/* graph */}
+        <div className={styles.graphWrap}>
+          <CrashGraph
+            phase={round?.phase || "-"}
+            points={points}
+            crashAt={crashAt}
+            displayMultiplier={multiplier}
+            height={340}
+          />
+        </div>
+
+        {error && <div className="card error">{error}</div>}
+
+        {/* BET AREA */}
+        <div className={`card ${styles.betArea}`}>
+          <div className={styles.tabBar}>
+            <button
+              className={`${styles.tabBtn} ${mode === "manual" ? styles.tabBtnActive : ""}`}
+              onClick={() => setMode("manual")}
+            >
+              Manual
+            </button>
+            <button
+              className={`${styles.tabBtn} ${mode === "auto" ? styles.tabBtnActive : ""}`}
+              onClick={() => setMode("auto")}
+            >
+              Auto
+            </button>
           </div>
 
-          <div style={{ textAlign: "right", color: "var(--muted)" }}>
-            Betting ends:{" "}
-            <span className="mono">
-              {round?.bettingEndsAt ? new Date(round.bettingEndsAt).toLocaleTimeString() : "-"}
+          <div className={styles.betBody} style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <label>
+                Amount
+                <input value={amount} onChange={(e) => setAmount(e.target.value)} />
+              </label>
+              <label>
+                Auto Cashout
+                <input value={autoCashout} onChange={(e) => setAutoCashout(e.target.value)} />
+              </label>
+            </div>
+
+            <div className={styles.betButtonRow}>
+              <button
+                className={`btn-primary ${styles.bigBetBtn}`}
+                disabled={bigAction.disabled}
+                onClick={bigAction.onClick}
+              >
+                {bigAction.label}
+              </button>
+
+              <div style={{ marginTop: 8, textAlign: "center", color: "var(--muted)" }}>
+                Bet Status: <span className="mono">{bet?.status || "NONE"}</span>
+                {queuedNext && !bet ? (
+                  <span style={{ marginLeft: 10 }} className="badge">
+                    queued
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", color: "var(--muted)" }}>
+          <span className="mono">Network Status • {status}</span>
+        </div>
+
+        {!token && (
+          <div style={{ color: "var(--muted)" }}>
+            No token. Go to <Link href="/auth">/auth</Link>
+          </div>
+        )}
+      </div>
+
+      {/* RIGHT */}
+      <div className={styles.right}>
+        <div className={styles.sideTabs}>
+          <div className={`${styles.sideTab} ${styles.sideTabActive}`}>Classic</div>
+          <div className={styles.sideTab}>Trenball</div>
+          <div className={styles.sideTab}>Betting Strategy</div>
+        </div>
+
+        <div className="card" style={{ padding: 12 }}>
+          <div className="row" style={{ marginBottom: 10 }}>
+            <b>Live Bets</b>
+            <span className="badge" style={{ marginLeft: "auto" }}>
+              {bets.length} bets
             </span>
           </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 80px 120px",
+              gap: 8,
+              padding: "8px 10px",
+              borderBottom: "1px solid var(--border)",
+              color: "var(--muted)",
+              fontWeight: 800,
+            }}
+          >
+            <div>Player</div>
+            <div style={{ textAlign: "right" }}>Cashout</div>
+            <div style={{ textAlign: "right" }}>Amount</div>
+          </div>
+
+          <div style={{ display: "grid" }}>
+            {bets.length === 0 ? (
+              <div style={{ padding: 12, color: "var(--muted)" }}>No bets this round.</div>
+            ) : (
+              bets.map((b: any) => (
+                <div
+                  key={b.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 80px 120px",
+                    gap: 8,
+                    padding: "10px",
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ fontWeight: 800 }}>Hidden</div>
+                  <div style={{ textAlign: "right" }} className="mono">
+                    {b.cashoutMultiplier ? `${Number(b.cashoutMultiplier).toFixed(2)}x` : "-"}
+                  </div>
+                  <div style={{ textAlign: "right" }} className="mono">
+                    {String(b.amount)}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-      </div>
-
-      <div className="card">
-        <b>Your Bets (this round)</b>
-        <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(bets, null, 2)}</pre>
-      </div>
-    </div>
-  );
-}
-
-function BetPanel(props: {
-  title: string;
-  bet: any | null;
-  canBet: boolean;
-  canCashout: boolean;
-  amount: string;
-  setAmount: (v: string) => void;
-  autoCashout: string;
-  setAutoCashout: (v: string) => void;
-  onPlace: () => void;
-  onCancel: () => void;
-  onCashout: () => void;
-  liveMultiplier: number;
-}) {
-  const { title, bet, canBet, canCashout, amount, setAmount, autoCashout, setAutoCashout, onPlace, onCancel, onCashout, liveMultiplier } = props;
-
-  const potential = useMemo(() => {
-    if (!bet) return null;
-    const a = Number(bet.amount || 0);
-    return Math.floor(a * Number(liveMultiplier || 1));
-  }, [bet, liveMultiplier]);
-
-  const statusLine = bet
-    ? `Status: ${bet.status} | Amount: ${bet.amount} | Auto: ${bet.autoCashout ?? "-"} | Payout: ${bet.payout ?? 0}`
-    : "No bet placed in this slot";
-
-  return (
-    <div className="card">
-      <div className="row">
-        <b>{title}</b>
-        {potential !== null && <span className="badge">Potential: <b>{potential}</b></span>}
-      </div>
-
-      <div style={{ marginTop: 10, color: "var(--muted)" }}>{statusLine}</div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
-        <label>
-          Amount
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </label>
-
-        <label>
-          Auto Cashout (optional)
-          <input value={autoCashout} onChange={(e) => setAutoCashout(e.target.value)} />
-        </label>
-      </div>
-
-      <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-        <button className="btn-primary" disabled={!canBet} onClick={onPlace}>
-          Place
-        </button>
-
-        <button className="btn-danger" disabled={!canBet || !bet || bet.status !== "PLACED"} onClick={onCancel}>
-          Cancel
-        </button>
-
-        <button disabled={!canCashout || !bet || bet.status !== "ACTIVE"} onClick={onCashout}>
-          Cashout
-        </button>
       </div>
     </div>
   );

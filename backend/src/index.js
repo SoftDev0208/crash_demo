@@ -8,6 +8,8 @@ import { createGameEngine } from "./gameEngine.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { socketAuth } from "./socket/socketAuth.js";
 import { placeBet, cancelBet, cashoutBet, getUserBetsForRound } from "./services/bettingService.js";
+import { getUserBalance } from "./services/balanceService.js";
+import { toBetDTO, toBetsDTO } from "./utils/serialize.js";
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -25,7 +27,7 @@ const config = {
   houseEdge: Number(process.env.HOUSE_EDGE || "0.01"),
   bettingMs: Number(process.env.BETTING_MS || "6000"),
   cooldownMs: Number(process.env.COOLDOWN_MS || "2000"),
-  tickMs: Number(process.env.TICK_MS || "50")
+  tickMs: Number(process.env.TICK_MS || "50"),
 };
 
 const engine = createGameEngine({ io, config });
@@ -50,44 +52,78 @@ nsp.on("connection", async (socket) => {
   const roundId = engine.getCurrentRoundId();
   if (roundId) {
     const bets = await getUserBetsForRound(userId, roundId);
-    socket.emit("bets:update", { roundId, userId, bets });
+    socket.emit("bets:update", { roundId, userId, bets: toBetsDTO(bets) });
   }
 
+  // History
   socket.emit("history:update", { items: getHistory() });
+
+  // Balance
+  const balance = await getUserBalance(userId);
+  socket.emit("balance:update", { pointsBalance: balance });
 
   socket.on("bet:place", async (payload, cb) => {
     try {
       const roundId2 = payload?.roundId || engine.getCurrentRoundId();
+
       const bet = await placeBet({
         userId,
         roundId: roundId2,
         slotIndex: Number(payload.slotIndex),
         amount: payload.amount,
-        autoCashout: payload.autoCashout ?? null
+        autoCashout: payload.autoCashout ?? null,
       });
 
       const bets = await getUserBetsForRound(userId, roundId2);
-      socket.emit("bets:update", { roundId: roundId2, userId, bets });
+      socket.emit("bets:update", { roundId: roundId2, userId, bets: toBetsDTO(bets) });
 
-      cb?.({ ok: true, bet });
+      const balance2 = await getUserBalance(userId);
+      socket.emit("balance:update", { pointsBalance: balance2 });
+
+      // ✅ BigInt safe
+      cb?.({ ok: true, bet: toBetDTO(bet) });
     } catch (e) {
-      cb?.({ ok: false, error: String(e.message || e) });
+      cb?.({ ok: false, error: String(e?.message || e) });
     }
   });
 
   socket.on("bet:cancel", async (payload, cb) => {
     try {
       const roundId2 = payload?.roundId || engine.getCurrentRoundId();
-      const bet = await cancelBet({ userId, roundId: roundId2, slotIndex: Number(payload.slotIndex) });
+
+      const bet = await cancelBet({
+        userId,
+        roundId: roundId2,
+        slotIndex: Number(payload.slotIndex),
+      });
+
+      const bets = await getUserBetsForRound(userId, roundId2);
+      socket.emit("bets:update", { roundId: roundId2, userId, bets: toBetsDTO(bets) });
+
+      const balance2 = await getUserBalance(userId);
+      socket.emit("balance:update", { pointsBalance: balance2 });
+
+      // ✅ BigInt safe
+      cb?.({ ok: true, bet: toBetDTO(bet) });
+    } catch (e) {
+      cb?.({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  socket.on("bet:refresh", async (payload, cb) => {
+    try {
+      const roundId2 = payload?.roundId || engine.getCurrentRoundId();
+      if (!roundId2) return cb?.({ ok: false, error: "NO_ROUND" });
 
       const bets = await getUserBetsForRound(userId, roundId2);
       socket.emit("bets:update", { roundId: roundId2, userId, bets });
 
-      cb?.({ ok: true, bet });
+      cb?.({ ok: true });
     } catch (e) {
-      cb?.({ ok: false, error: String(e.message || e) });
+      cb?.({ ok: false, error: String(e?.message || e) });
     }
   });
+
 
   socket.on("bet:cashout", async (payload, cb) => {
     try {
@@ -98,15 +134,19 @@ nsp.on("connection", async (socket) => {
         userId,
         roundId: roundId2,
         slotIndex: Number(payload.slotIndex),
-        multiplier: m
+        multiplier: m,
       });
 
       const bets = await getUserBetsForRound(userId, roundId2);
-      socket.emit("bets:update", { roundId: roundId2, userId, bets });
+      socket.emit("bets:update", { roundId: roundId2, userId, bets: toBetsDTO(bets) });
 
-      cb?.({ ok: true, bet, multiplier: m });
+      const balance2 = await getUserBalance(userId);
+      socket.emit("balance:update", { pointsBalance: balance2 });
+
+      // ✅ BigInt safe
+      cb?.({ ok: true, bet: toBetDTO(bet), multiplier: m });
     } catch (e) {
-      cb?.({ ok: false, error: String(e.message || e) });
+      cb?.({ ok: false, error: String(e?.message || e) });
     }
   });
 });

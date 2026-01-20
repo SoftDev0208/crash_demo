@@ -1,7 +1,14 @@
 import { prisma } from "./db.js";
 import { pushCrash, getHistory } from "./historyStore.js";
 import { crashMultiplierFromSeeds, newServerSeed, sha256Hex } from "./provablyFair.js";
-import { activateBetsForRound, cashoutBet, settleLosses } from "./services/bettingService.js";
+import {
+  activateBetsForRound,
+  cashoutBet,
+  settleLosses,
+  getUserBetsForRound,
+} from "./services/bettingService.js";
+import { getUserBalance } from "./services/balanceService.js";
+import { toBetsDTO } from "./utils/serialize.js";
 
 export function createGameEngine({ io, config }) {
   let current = null;
@@ -28,24 +35,26 @@ export function createGameEngine({ io, config }) {
       clientSeed: current.clientSeed,
       nonce: Number(current.nonce),
       bettingEndsAt: current.bettingEndsAt,
-      startsAt: current.startsAt
+      startsAt: current.startsAt,
     });
   }
 
   function broadcastTick(multiplier, elapsedMs) {
+    if (!current) return;
     io.of("/crash").emit("flight:tick", {
       roundId: current.roundId,
       multiplier,
-      elapsedMs
+      elapsedMs,
     });
   }
 
   function broadcastCrash(crashMultiplier) {
+    if (!current) return;
     io.of("/crash").emit("round:crash", {
       roundId: current.roundId,
       crashMultiplier,
       serverSeed: current.serverSeed,
-      endedAt: nowMs()
+      endedAt: nowMs(),
     });
   }
 
@@ -56,22 +65,36 @@ export function createGameEngine({ io, config }) {
     return Math.floor(m * 100) / 100;
   }
 
+  // ✅ Single source of truth: always push latest bets + balance to user
+  async function emitUserState(userId, roundId) {
+    const bets = await getUserBetsForRound(userId, roundId);
+    io.of("/crash").to(`user:${userId}`).emit("bets:update", {
+      roundId,
+      userId,
+      bets: toBetsDTO(bets),
+    });
+
+    const balance = await getUserBalance(userId);
+    io.of("/crash").to(`user:${userId}`).emit("balance:update", {
+      pointsBalance: balance,
+    });
+  }
+
   async function createNextRound() {
     clearTimers();
 
     const last = await prisma.round.findFirst({ orderBy: { createdAt: "desc" } });
-    const nextNonce = BigInt(last ? (BigInt(last.nonce) + 1n) : 1n);
+    const nextNonce = BigInt(last ? BigInt(last.nonce) + 1n : 1n);
 
     const serverSeed = newServerSeed();
     const serverSeedHash = sha256Hex(serverSeed);
-
     const clientSeed = "global-client-seed";
 
     const crash = crashMultiplierFromSeeds({
       serverSeed,
       clientSeed,
       nonce: nextNonce.toString(),
-      houseEdge: config.houseEdge
+      houseEdge: config.houseEdge,
     });
 
     const t0 = nowMs();
@@ -86,8 +109,8 @@ export function createGameEngine({ io, config }) {
         crashMultiplier: crash,
         phase: "BETTING",
         bettingStartAt,
-        bettingEndAt
-      }
+        bettingEndAt,
+      },
     });
 
     current = {
@@ -101,7 +124,7 @@ export function createGameEngine({ io, config }) {
       bettingEndsAt: bettingEndAt.getTime(),
       startsAt: bettingEndAt.getTime(),
       flightStartMs: null,
-      lastMultiplier: 1.0
+      lastMultiplier: 1.0,
     };
 
     broadcastRoundState();
@@ -110,6 +133,7 @@ export function createGameEngine({ io, config }) {
 
   async function beginFlight() {
     if (!current) return;
+
     current.phase = "FLIGHT";
     current.flightStartMs = nowMs();
     current.lastMultiplier = 1.0;
@@ -118,12 +142,21 @@ export function createGameEngine({ io, config }) {
       where: { id: current.roundId },
       data: {
         phase: "FLIGHT",
-        flightStartAt: new Date(current.flightStartMs)
-      }
+        flightStartAt: new Date(current.flightStartMs),
+      },
     });
 
-    // IMPORTANT: lock in bets
+    // ✅ Lock in bets (PLACED -> ACTIVE)
     await activateBetsForRound(current.roundId);
+
+    // ✅ Immediately push updated bet status to all users who placed bets
+    const users = await prisma.bet.findMany({
+      where: { roundId: current.roundId },
+      select: { userId: true },
+      distinct: ["userId"],
+    });
+
+    await Promise.all(users.map((u) => emitUserState(u.userId, current.roundId)));
 
     broadcastRoundState();
 
@@ -136,26 +169,37 @@ export function createGameEngine({ io, config }) {
 
       broadcastTick(m, elapsed);
 
-      // auto cashout: find ACTIVE bets with autoCashout <= m
-      // (simple approach: query DB each tick; we can optimize later)
+      // ✅ AUTO CASHOUT (server authoritative)
       const autoBets = await prisma.bet.findMany({
         where: {
           roundId: current.roundId,
           status: "ACTIVE",
-          autoCashout: { not: null, lte: m }
-        }
+          autoCashout: { not: null, lte: m },
+        },
+        select: { userId: true, roundId: true, slotIndex: true },
       });
 
-      for (const bet of autoBets) {
+      const touchedUsers = new Set();
+
+      for (const b of autoBets) {
         try {
-          await cashoutBet({ userId: bet.userId, roundId: bet.roundId, slotIndex: bet.slotIndex, multiplier: m });
-          // optionally notify user
-          io.of("/crash").to(`user:${bet.userId}`).emit("bets:changed", { roundId: bet.roundId });
+          await cashoutBet({
+            userId: b.userId,
+            roundId: b.roundId,
+            slotIndex: b.slotIndex,
+            multiplier: m,
+          });
+          touchedUsers.add(b.userId);
         } catch {
-          // ignore if already cashed out by race condition
+          // ignore race
         }
       }
 
+      if (touchedUsers.size > 0) {
+        await Promise.all([...touchedUsers].map((uid) => emitUserState(uid, current.roundId)));
+      }
+
+      // Crash check
       if (m >= current.crashMultiplier) {
         await crashNow();
       }
@@ -174,15 +218,19 @@ export function createGameEngine({ io, config }) {
       data: {
         phase: "CRASH",
         crashAt,
-        serverSeed: current.serverSeed
-      }
+        serverSeed: current.serverSeed,
+      },
     });
 
-    // settle remaining active bets as LOST
-    await settleLosses(current.roundId);
+    // ✅ settle remaining ACTIVE bets as LOST, returns affected userIds
+    const losers = await settleLosses(current.roundId);
+
+    // ✅ Push updated bets + balance to losers (and anyone else affected)
+    await Promise.all(losers.map((uid) => emitUserState(uid, current.roundId)));
 
     broadcastCrash(current.crashMultiplier);
 
+    // History
     pushCrash(current.crashMultiplier);
     io.of("/crash").emit("history:update", { items: getHistory() });
 
@@ -206,7 +254,7 @@ export function createGameEngine({ io, config }) {
       nonce: Number(current.nonce),
       bettingEndsAt: current.bettingEndsAt,
       startsAt: current.startsAt,
-      lastMultiplier: current.lastMultiplier
+      lastMultiplier: current.lastMultiplier,
     };
   }
 
@@ -227,6 +275,6 @@ export function createGameEngine({ io, config }) {
     getPublicState,
     getCurrentMultiplier,
     getCurrentRoundId,
-    getPhase
+    getPhase,
   };
 }
