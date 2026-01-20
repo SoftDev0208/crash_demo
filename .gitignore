@@ -1,52 +1,37 @@
-# =========================
-# OS / System
-# =========================
+# ===== OS / Editor =====
 .DS_Store
 Thumbs.db
 Desktop.ini
 ehthumbs.db
 $RECYCLE.BIN/
+*.lnk
 
-# =========================
-# Editors / IDEs
-# =========================
+# VS Code
 .vscode/
-.idea/
-*.swp
-*.swo
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
 
-# =========================
-# Logs
-# =========================
+# JetBrains
+.idea/
+
+# ===== Logs =====
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
+yarn-error.log*
 pnpm-debug.log*
 
-# =========================
-# Node / Package Managers
-# =========================
+# ===== Node / Package managers =====
 node_modules/
 .pnpm-store/
 .yarn/
 .yarn-cache/
+.yarnrc.yml
 
-# =========================
-# Environment variables
-# =========================
-.env
-.env.*
-!.env.example
-
-# Next.js env
-.env.local
-.env.development
-.env.production
-
-# =========================
-# Build outputs
-# =========================
+# ===== Build outputs =====
 dist/
 build/
 out/
@@ -55,24 +40,21 @@ out/
 .next/
 .vercel/
 
-# =========================
-# Prisma
-# =========================
-# Prisma client is inside node_modules (already ignored)
+# ===== Environment files (DO NOT COMMIT) =====
+.env
+.env.*
+!.env.example
+
+# ===== Prisma =====
+# (Prisma generates client inside node_modules - already ignored)
 prisma/migrations/**/migration_lock.toml
 
-# =========================
-# Tests / Coverage
-# =========================
+# ===== Coverage / Test =====
 coverage/
 *.lcov
 
-# =========================
-# TypeScript
-# =========================
+# ===== TypeScript =====
 *.tsbuildinfo
 
-# =========================
-# Misc
-# =========================
+# ===== Misc =====
 *.local
