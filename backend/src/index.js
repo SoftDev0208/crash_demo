@@ -10,6 +10,7 @@ import { socketAuth } from "./socket/socketAuth.js";
 import { placeBet, cancelBet, cashoutBet, getUserBetsForRound } from "./services/bettingService.js";
 import { getUserBalance } from "./services/balanceService.js";
 import { toBetDTO, toBetsDTO } from "./utils/serialize.js";
+import { limboRoutes } from "./routes/limboRoutes.js";
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -19,6 +20,7 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // REST routes
 app.use("/api/auth", authRoutes);
+app.use("/api/limbo", limboRoutes);
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true } });
