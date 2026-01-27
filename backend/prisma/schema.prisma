@@ -55,6 +55,9 @@ model User {
   referrerRewards ReferralReward[] @relation("ReferrerRewards")
   referredRewards ReferralReward[] @relation("ReferredRewards")
 
+  // ✅ add this
+  limboBets LimboBet[]
+
   createdAt DateTime @default(now())
 }
 
@@ -149,7 +152,7 @@ model LimboBet {
   profit    BigInt   // net profit (can be negative)
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
   @@index([userId, createdAt])
 }
