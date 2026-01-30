@@ -14,7 +14,7 @@ export function hmacSha256Hex(key, msg) {
  * - Applies house edge
  * - Returns number rounded to 2 decimals, minimum 1.00
  */
-export function crashMultiplierFromSeeds({ serverSeed, clientSeed, nonce, houseEdge = 0.03 }) {
+export function multiplierFromSeeds({ serverSeed, clientSeed, nonce, houseEdge = 0.03 }) {
   const h = hmacSha256Hex(serverSeed, `${clientSeed}:${nonce}`);
   const r = parseInt(h.slice(0, 13), 16); // 52 bits
   const max = 2 ** 52;

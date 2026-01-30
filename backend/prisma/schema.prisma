@@ -142,17 +142,19 @@ model ReferralReward {
 }
 
 model LimboBet {
-  id        String   @id @default(uuid())
-  userId    String
-  amount    BigInt
-  payout    Decimal  @db.Decimal(10, 2)
-  chance    Decimal  @db.Decimal(10, 2) // percent (0-100)
-  roll      Decimal  @db.Decimal(10, 2) // percent (0-100)
-  win       Boolean
-  profit    BigInt   // net profit (can be negative)
-  createdAt DateTime @default(now())
+  id               String   @id @default(uuid())
+  userId           String
+  amount           BigInt
+
+  targetMultiplier Decimal  @db.Decimal(10, 2)
+  rolledMultiplier Decimal  @db.Decimal(10, 2) // ← crashMultiplier reused
+
+  win              Boolean
+  profit           BigInt
+  createdAt        DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId, createdAt])
 }
+

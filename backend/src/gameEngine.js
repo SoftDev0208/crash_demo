@@ -1,6 +1,6 @@
 import { prisma } from "./db.js";
 import { pushCrash, getHistory } from "./historyStore.js";
-import { crashMultiplierFromSeeds, newServerSeed, sha256Hex } from "./provablyFair.js";
+import { multiplierFromSeeds, newServerSeed, sha256Hex } from "./provablyFair.js";
 import {
   activateBetsForRound,
   cashoutBet,
@@ -90,7 +90,7 @@ export function createGameEngine({ io, config }) {
     const serverSeedHash = sha256Hex(serverSeed);
     const clientSeed = "global-client-seed";
 
-    const crash = crashMultiplierFromSeeds({
+    const crash = multiplierFromSeeds({
       serverSeed,
       clientSeed,
       nonce: nextNonce.toString(),

@@ -96,6 +96,7 @@ export async function placeLimboBet({ userId, amount, payout, houseEdge = 0.01 }
       });
     }
 
+    // Create the Limbo bet record with targetMultiplier and rolledMultiplier
     const bet = await tx.limboBet.create({
       data: {
         userId,
@@ -105,6 +106,8 @@ export async function placeLimboBet({ userId, amount, payout, houseEdge = 0.01 }
         roll,
         win,
         profit,
+        targetMultiplier: p,  // The target multiplier user wants to hit
+        rolledMultiplier: win ? roll : 0n,  // The multiplier that was actually rolled
       },
     });
 
