@@ -2,73 +2,85 @@ import crypto from "crypto";
 import { prisma } from "../db.js";
 
 /**
- * Limbo math:
- * payout = (1 - edge) / (chance/100)
- * chance = ((1 - edge) / payout) * 100
+ * Limbo (BC-like):
+ * - player chooses targetMultiplier (e.g. 2.00x)
+ * - server "rolls" a multiplier (rolledMultiplier)
+ * - win if rolledMultiplier >= targetMultiplier
  *
- * roll is [0, 100)
- * win if roll < chance
+ * payout = targetMultiplier
+ * profit = win ? stake*(payout-1) : -stake
  */
-function randomRollPercent() {
-  // 0..9999 -> 0.00..99.99
-  const n = crypto.randomInt(0, 10000);
-  return n / 100;
-}
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-export async function placeLimboBet({ userId, amount, payout, houseEdge = 0.01 }) {
-  const amt = BigInt(Math.floor(Number(amount || 0)));
-  if (amt <= 0n) throw new Error("INVALID_AMOUNT");
+function round2(n) {
+  return Math.floor(n * 100) / 100;
+}
 
-  const edge = clamp(Number(houseEdge), 0, 0.2);
-  const p = Number(payout);
+// Generates a rolled multiplier (>=1.00) using uniform randomness.
+// If you want provably-fair later, we can swap this with seed-based HMAC.
+function rollMultiplier({ houseEdge }) {
+  // u in [0,1)
+  const u = crypto.randomInt(0, 2 ** 26) / (2 ** 26); // stable-ish uniform
+  const edge = clamp(Number(houseEdge || 0), 0, 0.2);
 
-  if (!Number.isFinite(p) || p < 1.01 || p > 100000) throw new Error("INVALID_PAYOUT");
+  // Same shape as crash: (1-edge)/(1-u)
+  const m = (1 - edge) / (1 - u);
+  return Math.max(1.0, round2(m));
+}
 
-  const chance = clamp(((1 - edge) / p) * 100, 0.01, 99.99);
-  const roll = randomRollPercent();
-  const win = roll < chance;
+export async function placeLimboBet({ userId, amount, targetMultiplier, houseEdge = 0.01 }) {
+  const stake = BigInt(Math.floor(Number(amount || 0)));
+  if (stake <= 0n) throw new Error("INVALID_AMOUNT");
 
-  // Balance changes:
-  // - subtract stake
-  // - if win, add back stake * payout
-  // profit = win ? (stake*payout - stake) : (-stake)
-  const winPayout = win ? BigInt(Math.floor(Number(amt) * p)) : 0n;
-  const profit = win ? (winPayout - amt) : (-amt);
+  const target = Number(targetMultiplier);
+  if (!Number.isFinite(target) || target < 1.01 || target > 100000) {
+    throw new Error("INVALID_TARGET_MULTIPLIER");
+  }
+
+  const rolled = rollMultiplier({ houseEdge });
+  const win = rolled >= target;
+
+  // profit:
+  // win => stake*(target-1)
+  // lose => -stake
+  const profit = win
+    ? BigInt(Math.floor(Number(stake) * (target - 1)))
+    : -stake;
 
   const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error("USER_NOT_FOUND");
 
     const bal = BigInt(user.pointsBalance);
-    if (bal < amt) throw new Error("INSUFFICIENT_FUNDS");
+    if (bal < stake) throw new Error("INSUFFICIENT_FUNDS");
 
-    // subtract stake first
-    const afterStake = bal - amt;
+    // subtract stake
+    const afterStake = bal - stake;
 
     await tx.user.update({
       where: { id: userId },
       data: { pointsBalance: afterStake },
     });
 
-    // ledger: bet place
     await tx.ledgerEntry.create({
       data: {
         userId,
         roundId: null,
         type: "BET_PLACE",
-        delta: -amt,
+        delta: -stake,
         balanceAfter: afterStake,
       },
     });
 
+    // apply win payout
     let finalBal = afterStake;
 
     if (win) {
-      finalBal = afterStake + winPayout;
+      const payoutTotal = stake + profit; // stake + (stake*(target-1)) = stake*target
+      finalBal = afterStake + payoutTotal;
 
       await tx.user.update({
         where: { id: userId },
@@ -80,7 +92,7 @@ export async function placeLimboBet({ userId, amount, payout, houseEdge = 0.01 }
           userId,
           roundId: null,
           type: "CASHOUT",
-          delta: winPayout,
+          delta: payoutTotal,
           balanceAfter: finalBal,
         },
       });
@@ -96,18 +108,14 @@ export async function placeLimboBet({ userId, amount, payout, houseEdge = 0.01 }
       });
     }
 
-    // Create the Limbo bet record with targetMultiplier and rolledMultiplier
     const bet = await tx.limboBet.create({
       data: {
         userId,
-        amount: amt,
-        payout: p,
-        chance,
-        roll,
+        amount: stake,
+        targetMultiplier: target,
+        rolledMultiplier: rolled,
         win,
         profit,
-        targetMultiplier: p,  // The target multiplier user wants to hit
-        rolledMultiplier: win ? roll : 0n,  // The multiplier that was actually rolled
       },
     });
 
@@ -115,4 +123,13 @@ export async function placeLimboBet({ userId, amount, payout, houseEdge = 0.01 }
   });
 
   return result;
+}
+
+export async function getLimboHistory({ userId, take = 50 }) {
+  const rows = await prisma.limboBet.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    take,
+  });
+  return rows;
 }

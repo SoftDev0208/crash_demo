@@ -15,6 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <h2 style={{ margin: 0 }}>Crash Demo</h2>
             <nav style={{ display: "flex", gap: 12 }}>
               <Link href="/">Game</Link>
+              <Link href="/limbo">Limbo</Link>
               <Link href="/auth">Auth</Link>
             </nav>
           </header>

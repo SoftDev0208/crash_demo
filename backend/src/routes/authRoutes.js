@@ -18,7 +18,7 @@ function toUserDTO(user) {
   };
 }
 
-authRoutes.post("/register", async (req, res) => {
+authRoutes.post("/register", requireAuth, async (req, res) => {
   const { username, password, ref } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: "username/password required" });
 
@@ -48,7 +48,7 @@ authRoutes.post("/register", async (req, res) => {
   }
 });
 
-authRoutes.post("/login", async (req, res) => {
+authRoutes.post("/login", requireAuth, async (req, res) => {
   const { username, password } = req.body || {};
   console.log(username, password);
   if (!username || !password) return res.status(400).json({ error: "username/password required" });

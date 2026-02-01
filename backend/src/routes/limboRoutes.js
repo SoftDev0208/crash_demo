@@ -1,54 +1,46 @@
 import express from "express";
-import jwt from "jsonwebtoken";
-import { placeLimboBet } from "../services/limboService.js";
+import { requireAuth } from "../middleware/httpAuth.js";
+import { placeLimboBet, getLimboHistory } from "../services/limboService.js";
+import { toBetsDTO, toBetDTO } from "../utils/serialize.js";
 
 export const limboRoutes = express.Router();
 
-function requireAuth(req, res, next) {
-  const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-  if (!token) return res.status(401).json({ error: "NO_TOKEN" });
-
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || "dev-secret");
-    req.user = payload;
-    next();
-  } catch {
-    return res.status(401).json({ error: "BAD_TOKEN" });
-  }
-}
-
-// BigInt-safe output
-function toLimboDTO(x) {
-  return {
-    id: x.id,
-    userId: x.userId,
-    amount: x.amount?.toString?.() ?? String(x.amount),
-    payout: Number(x.payout),
-    chance: Number(x.chance),
-    roll: Number(x.roll),
-    win: !!x.win,
-    profit: x.profit?.toString?.() ?? String(x.profit),
-    createdAt: x.createdAt,
-  };
-}
-
+/**
+ * POST /api/limbo/bet
+ * body: { amount: number, targetMultiplier: number }
+ */
 limboRoutes.post("/bet", requireAuth, async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    const amount = Number(req.body?.amount);
-    const payout = Number(req.body?.payout);
-
-    const houseEdge = Number(process.env.HOUSE_EDGE || "0.01");
-
-    const { bet, pointsBalance } = await placeLimboBet({ userId, amount, payout, houseEdge });
+    const { amount, targetMultiplier } = req.body || {};
+    const { bet, pointsBalance } = await placeLimboBet({
+      userId,
+      amount,
+      targetMultiplier,
+      houseEdge: Number(process.env.HOUSE_EDGE || "0.01"),
+    });
 
     res.json({
       ok: true,
-      bet: toLimboDTO(bet),
+      bet: toBetDTO(bet),
       pointsBalance: pointsBalance.toString(),
     });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+/**
+ * GET /api/limbo/history?take=50
+ */
+limboRoutes.get("/history", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const take = Math.min(200, Math.max(1, Number(req.query.take || 50)));
+
+    const rows = await getLimboHistory({ userId, take });
+    res.json({ ok: true, items: toBetsDTO(rows) });
   } catch (e) {
     res.status(400).json({ ok: false, error: String(e?.message || e) });
   }

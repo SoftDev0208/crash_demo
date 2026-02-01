@@ -147,7 +147,7 @@ model LimboBet {
   amount           BigInt
 
   targetMultiplier Decimal  @db.Decimal(10, 2)
-  rolledMultiplier Decimal  @db.Decimal(10, 2) // ← crashMultiplier reused
+  rolledMultiplier Decimal  @db.Decimal(10, 2) // result like crash multiplier
 
   win              Boolean
   profit           BigInt
