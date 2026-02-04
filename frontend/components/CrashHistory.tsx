@@ -10,6 +10,8 @@ export default function CrashHistory(props: {
 }) {
   const { items, max = 20, rightSlot } = props;
 
+  console.log("CrashHistory items:", items);
+
   const list = Array.isArray(items) ? items.slice(0, max) : [];
 
   return (

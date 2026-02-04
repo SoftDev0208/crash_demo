@@ -38,9 +38,6 @@ limboRoutes.get("/history", requireAuth, async (req, res) => {
   const userId = req.user.userId;
 
   const rows = await getLimboHistory({userId});
-
-  console.log(rows);
-
   // Decimal -> number
   const items = rows.map(r => Number(r.rolledMultiplier));
   res.json({ items });

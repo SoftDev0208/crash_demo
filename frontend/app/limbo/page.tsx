@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiPost } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import CrashHistory from "@/components/CrashHistory";
 import styles from "./LimboPage.module.css";
 import TrendPopover from "@/components/TrendPopover";
 
@@ -256,18 +257,22 @@ export default function LimboPage() {
       {/* CENTER STAGE */}
       <main className={styles.stage}>
         {/* top right controls (trend button) */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 8 }}>
-          <button
-            ref={trendBtnRef}
-            type="button"
-            className="badge"
-            onClick={() => setTrendOpen((v) => !v)}
-            title="Trend"
-            aria-label="Trend"
-          >
-            ▦
-          </button>
-        </div>
+        <CrashHistory
+          items={history}
+          max={19}
+          rightSlot={
+            <button
+              ref={trendBtnRef}
+              type="button"
+              className="badge"
+              style={{ cursor: "pointer", userSelect: "none" }}
+              onClick={() => setTrendOpen((v) => !v)}
+              title="Trend"
+            >
+              ▦
+            </button>
+          }
+        />
 
         {/* Trend popover */}
         <TrendPopover
@@ -276,8 +281,6 @@ export default function LimboPage() {
           items={history}
           onClose={() => setTrendOpen(false)}
         />
-
-        <div className={styles.stageTopHint}>Game result will be displayed</div>
 
         {/* BIG CENTER MULTIPLIER */}
         <div className={styles.centerValue}>

@@ -41,7 +41,6 @@ export async function placeLimboBet({ userId, amount, targetMultiplier, houseEdg
   }
 
   const rolled = rollMultiplier({ houseEdge });
-  console.log("Rolled Multiplier:", rolled);
   const win = rolled >= target;
 
   // profit:

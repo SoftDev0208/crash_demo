@@ -7,7 +7,7 @@
 }
 
 .left {
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
@@ -17,24 +17,26 @@
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   border-bottom: 1px solid var(--border);
-  background: rgba(0,0,0,0.12);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .leftTab {
   padding: 12px 10px;
   border: 0;
-  border-right: 1px solid rgba(255,255,255,0.06);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   background: transparent;
   color: var(--muted);
   font-weight: 900;
   cursor: pointer;
 }
 
-.leftTab:last-child { border-right: 0; }
+.leftTab:last-child {
+  border-right: 0;
+}
 
 .leftTabActive {
   color: var(--text);
-  box-shadow: inset 0 -2px 0 rgba(46,204,113,0.8);
+  box-shadow: inset 0 -2px 0 rgba(46, 204, 113, 0.8);
 }
 
 .leftBody {
@@ -62,12 +64,14 @@
 
 .stage {
   position: relative;
-  background: rgba(255,255,255,0.03);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
   min-height: 560px;
+  z-index: 5;
 }
+
 
 .stageTopHint {
   position: absolute;
@@ -94,7 +98,7 @@
   font-size: 64px;
   font-weight: 1100;
   letter-spacing: 0.5px;
-  text-shadow: 0 6px 30px rgba(0,0,0,0.35);
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.35);
 }
 
 .centerSub {
@@ -103,15 +107,21 @@
   font-weight: 900;
 }
 
-.winText { color: var(--ok); }
-.loseText { color: var(--danger); }
+.winText {
+  color: var(--ok);
+}
+
+.loseText {
+  color: var(--danger);
+}
 
 .rocketArea {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(600px 300px at 50% 55%, rgba(255,255,255,0.06), transparent 70%),
-    radial-gradient(900px 500px at 40% 40%, rgba(0,0,0,0.25), transparent 70%);
+    radial-gradient(600px 300px at 50% 55%, rgba(255, 255, 255, 0.06), transparent 70%),
+    radial-gradient(900px 500px at 40% 40%, rgba(0, 0, 0, 0.25), transparent 70%);
+  pointer-events: none;
 }
 
 .bottomBar {
@@ -126,7 +136,7 @@
 }
 
 .bottomCard {
-  background: rgba(0,0,0,0.18);
+  background: rgba(0, 0, 0, 0.18);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px;
