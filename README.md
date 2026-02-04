@@ -67,7 +67,7 @@ This project is **points-only** (no real money) and designed for **learning, dem
 ---
 
 ## 📁 Project Structure
-
+```text
 crash_demo/
 ├── backend/
 │ ├── prisma/
