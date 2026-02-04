@@ -1,119 +1,198 @@
-# Crash Demo (Points) --- Node + React
+🎮 Crash & Limbo Game Demo
 
-A demo **Crash-style** game (points only) with **2 bet slots**,
-real-time multiplier updates, **leaderboard**, **daily bonus**, and
-**referrals**.
+A BC.Game–style Crash & Limbo betting demo built with a modern full-stack setup.
+This project demonstrates real-time crash gameplay, instant limbo bets, trend/history visualization, and JWT-based authentication, all powered by a single backend.
 
-> This project is an original implementation inspired by the common
-> "Crash" game mechanic (betting → multiplier rises → crash).\
-> It does **not** copy any proprietary code/assets from third-party
-> sites.
+⚠️ Educational / demo purpose only
+This project is not intended for real-money gambling or production use.
 
-------------------------------------------------------------------------
+✨ Features
+🔥 Crash Game
 
-## Features
+Real-time multiplier growth with WebSockets (Socket.IO)
 
-### Crash game (demo points)
+Provably fair crash multiplier generation
 
--   Rounds: **BETTING → FLIGHT → CRASH → COOLDOWN**
--   Real-time multiplier streaming via **Socket.IO**
--   **2 bet slots** per user (Bet A / Bet B)
--   Manual cashout (optional auto cashout stored on bet)
+Manual & auto cashout
 
-### Meta features
+Live bets panel
 
--   **Leaderboard** (daily / weekly / all-time)
--   **Daily bonus** (claim once per day)
--   **Referrals**
-    -   Each user has a referral code
-    -   Reward rule: referred user gets **5 cashouts** → referrer earns
-        **+2000 points** (one-time)
+Balance updates per round
 
-### Provably fair (MVP)
+History strip & trend chart (BC.Game style)
 
--   Server publishes `serverSeedHash` at round start
--   Server reveals `serverSeed` after crash
--   Crash point is deterministic from `(serverSeed, clientSeed, nonce)`
+🎯 Limbo Game
 
-------------------------------------------------------------------------
+Instant bet resolution (no waiting)
 
-## Tech Stack
+Target multiplier & win chance linkage
 
--   **Backend**: Node.js (Express), Socket.IO, Prisma
--   **Database**: Postgres
--   **Cache (optional)**: Redis
--   **Frontend**: React (Vite)
+Big center roll multiplier display
 
-------------------------------------------------------------------------
+Win / lose feedback with profit calculation
 
-## Project Structure
+Trend history popover (shared logic with Crash)
 
-    crash-demo/
-      backend/
-        prisma/
-          schema.prisma
-        src/
-          index.js
-          gameEngine.js
-          provablyFair.js
-          db.js
-          routes/
-          socket/
-      frontend/
-        src/
-          pages/
-          App.jsx
-          main.jsx
-      docker-compose.yml
-      README.md
+👤 Auth & Wallet
 
-------------------------------------------------------------------------
+JWT authentication
 
-## Requirements
+Register / Login / Logout
 
--   Node.js 18+
--   Docker + Docker Compose
+Points balance stored as BigInt
 
-------------------------------------------------------------------------
+Ledger entries for all balance changes
 
-## Quick Start
+🧱 Tech Stack
+Frontend
 
-### 1) Start Postgres + Redis
+Next.js (App Router)
 
-``` bash
-docker compose up -d
-```
+React + TypeScript
 
-### 2) Backend setup
+CSS Modules
 
-``` bash
-cd backend
-cp .env.example .env
+Socket.IO client
+
+Backend
+
+Node.js + Express
+
+Socket.IO (Crash real-time engine)
+
+Prisma ORM
+
+MySQL (InnoDB)
+
+JWT authentication
+
+Database
+
+MySQL (via Prisma)
+
+BigInt-safe balance & betting logic
+
+📁 Project Structure
+crash_demo/
+├── backend/
+│   ├── src/
+│   │   ├── index.js              # Express + Socket.IO entry
+│   │   ├── gameEngine.js         # Crash game loop
+│   │   ├── routes/
+│   │   │   ├── authRoutes.js
+│   │   │   └── limboRoutes.js
+│   │   ├── services/
+│   │   │   ├── bettingService.js
+│   │   │   ├── limboService.js
+│   │   │   └── balanceService.js
+│   │   ├── utils/
+│   │   │   └── serialize.js
+│   │   └── db.js
+│   └── prisma/
+│       └── schema.prisma
+│
+├── frontend/
+│   ├── app/
+│   │   ├── page.tsx              # Crash page
+│   │   ├── limbo/page.tsx        # Limbo page
+│   │   └── auth/page.tsx
+│   ├── components/
+│   │   ├── CrashGraph.tsx
+│   │   ├── CrashHistory.tsx
+│   │   └── TrendPopover.tsx
+│   └── lib/
+│       ├── api.ts
+│       ├── auth.ts
+│       └── socket.ts
+
+⚙️ Environment Configuration
+1️⃣ Backend .env
+
+Create backend/.env:
+
+DATABASE_URL="mysql://root:@localhost:3306/crash_demo"
+JWT_SECRET="crash_jwt_secret"
+
+PORT=4000
+
+HOUSE_EDGE=0.01
+BETTING_MS=6000
+COOLDOWN_MS=2000
+TICK_MS=50
+
+
+💡 Make sure MySQL is running and the database exists.
+
+2️⃣ Frontend .env.local
+
+Create frontend/.env.local:
+
+NEXT_PUBLIC_API_BASE=http://localhost:4000
+
+🗄️ Database Setup
+
+From backend/:
+
 npm install
+npx prisma generate
 npx prisma migrate dev --name init
+
+
+If you already changed the schema:
+
+npx prisma migrate reset
+
+▶️ Running the Project
+Backend
+cd backend
 npm run dev
-```
 
-Backend runs at:
 
-    http://localhost:4000
+Server runs on:
 
-------------------------------------------------------------------------
+http://localhost:4000
 
-### 3) Frontend setup
-
-``` bash
+Frontend
 cd frontend
 npm install
 npm run dev
-```
 
-Frontend runs at:
 
-    http://localhost:5173
+App runs on:
 
-------------------------------------------------------------------------
+http://localhost:3000
 
-## License
+🧪 How to Use
 
-MIT
+Open http://localhost:3000/auth
+
+Register or login
+
+Go to / for Crash
+
+Go to /limbo for Limbo
+
+Place bets, watch balance & trends update in real time
+
+🔐 Provably Fair Notes
+
+Crash uses server seed + client seed + nonce
+
+Limbo uses random roll logic with house edge
+
+Seeds & multipliers are stored per round/bet for auditability
+
+🚧 Known Limitations
+
+No production hardening
+
+No rate limiting
+
+No real payments
+
+Single-instance game engine (no clustering)
+
+📜 License
+
+MIT License
+Use freely for learning, demos, or experimentation.
