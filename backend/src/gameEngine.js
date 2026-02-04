@@ -83,53 +83,71 @@ export function createGameEngine({ io, config }) {
   async function createNextRound() {
     clearTimers();
 
-    const last = await prisma.round.findFirst({ orderBy: { createdAt: "desc" } });
-    const nextNonce = BigInt(last ? BigInt(last.nonce) + 1n : 1n);
+    // helper: fetch next nonce by MAX(nonce)
+    async function computeNextNonce() {
+      const agg = await prisma.round.aggregate({ _max: { nonce: true } });
+      const maxNonce = agg?._max?.nonce;
+      const bn = maxNonce == null ? 0n : BigInt(maxNonce.toString());
+      return bn + 1n;
+    }
 
-    const serverSeed = newServerSeed();
-    const serverSeedHash = sha256Hex(serverSeed);
-    const clientSeed = "global-client-seed";
+    // retry once if we collide (covers rare races / double init)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const nextNonce = await computeNextNonce();
 
-    const crash = multiplierFromSeeds({
-      serverSeed,
-      clientSeed,
-      nonce: nextNonce.toString(),
-      houseEdge: config.houseEdge,
-    });
+      const serverSeed = newServerSeed();
+      const serverSeedHash = sha256Hex(serverSeed);
+      const clientSeed = "global-client-seed";
 
-    const t0 = nowMs();
-    const bettingStartAt = new Date(t0);
-    const bettingEndAt = new Date(t0 + config.bettingMs);
+      const crash = multiplierFromSeeds({
+        serverSeed,
+        clientSeed,
+        nonce: nextNonce.toString(),
+        houseEdge: config.houseEdge,
+      });
 
-    const round = await prisma.round.create({
-      data: {
-        nonce: nextNonce,
-        serverSeedHash,
-        serverSeed: null,
-        crashMultiplier: crash,
-        phase: "BETTING",
-        bettingStartAt,
-        bettingEndAt,
-      },
-    });
+      const t0 = nowMs();
+      const bettingStartAt = new Date(t0);
+      const bettingEndAt = new Date(t0 + config.bettingMs);
 
-    current = {
-      roundId: round.id,
-      nonce: nextNonce.toString(),
-      phase: "BETTING",
-      serverSeed,
-      serverSeedHash,
-      clientSeed,
-      crashMultiplier: Number(crash),
-      bettingEndsAt: bettingEndAt.getTime(),
-      startsAt: bettingEndAt.getTime(),
-      flightStartMs: null,
-      lastMultiplier: 1.0,
-    };
+      try {
+        const round = await prisma.round.create({
+          data: {
+            nonce: nextNonce,
+            serverSeedHash,
+            serverSeed: null,
+            crashMultiplier: crash,
+            phase: "BETTING",
+            bettingStartAt,
+            bettingEndAt,
+          },
+        });
 
-    broadcastRoundState();
-    phaseTimer = setTimeout(() => beginFlight(), config.bettingMs);
+        current = {
+          roundId: round.id,
+          nonce: nextNonce.toString(),
+          phase: "BETTING",
+          serverSeed,
+          serverSeedHash,
+          clientSeed,
+          crashMultiplier: Number(crash),
+          bettingEndsAt: bettingEndAt.getTime(),
+          startsAt: bettingEndAt.getTime(),
+          flightStartMs: null,
+          lastMultiplier: 1.0,
+        };
+
+        broadcastRoundState();
+        phaseTimer = setTimeout(() => beginFlight(), config.bettingMs);
+        return; // ✅ success
+      } catch (e) {
+        // Prisma unique constraint
+        if (e?.code === "P2002" && attempt === 0) continue;
+        throw e;
+      }
+    }
   }
+
 
   async function beginFlight() {
     if (!current) return;

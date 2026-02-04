@@ -2,14 +2,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation"; // ✅ correct import
 import { apiPost, apiGet } from "@/lib/api";
 import { clearToken, getToken, setToken } from "@/lib/auth";
-import { useRouter } from "next/dist/client/components/navigation";
 
 type AuthResp = {
   token: string;
   user: { id: string; username: string; pointsBalance: string | number; referralCode?: string };
 };
+
+type MeResp = { user: AuthResp["user"] };
 
 export default function AuthPage() {
   const router = useRouter();
@@ -18,7 +20,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState("1234");
   const [ref, setRef] = useState("");
 
-  const [me, setMe] = useState<any>(null);
+  const [me, setMe] = useState<AuthResp["user"] | null>(null);
   const [error, setError] = useState("");
 
   async function loadMe() {
@@ -31,37 +33,37 @@ export default function AuthPage() {
     }
 
     try {
-      const data = await apiGet<{ user: any }>("/api/auth/me", token);
+      const data = await apiGet<MeResp>("/api/auth/me", token);
       setMe(data.user);
     } catch (e: any) {
-      setError(String(e?.message || e));
+      // ✅ if token is invalid/expired, clear it so UI doesn't keep failing
+      clearToken();
       setMe(null);
+      setError(String(e?.message || e));
     }
   }
 
-  // ✅ Avoid calling setState synchronously inside an effect body:
-  // Use an async IIFE (state updates happen after await)
   useEffect(() => {
-    (async () => {
-      await loadMe();
-    })();
+    void loadMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function register() {
     setError("");
     try {
-      const data = await apiPost<AuthResp>("/api/auth/register", {
+      const data = await apiPost<
+        AuthResp,
+        { username: string; password: string; ref?: string }
+      >("/api/auth/register", {
         username,
         password,
         ref: ref || undefined,
       });
+
       setToken(data.token);
+      setMe(data.user);
 
-       // ✅ go to Crash page
-      router.push("/");
-
-      await loadMe();
+      router.push("/"); // ✅ go to crash page after success
     } catch (e: any) {
       setError(String(e?.message || e));
     }
@@ -70,10 +72,15 @@ export default function AuthPage() {
   async function login() {
     setError("");
     try {
-      const data = await apiPost<AuthResp>("/api/auth/login", { username, password });
+      const data = await apiPost<
+        AuthResp,
+        { username: string; password: string }
+      >("/api/auth/login", { username, password });
+
       setToken(data.token);
       setMe(data.user);
-      await loadMe();
+
+      router.push("/"); // ✅ go to crash page after success
     } catch (e: any) {
       setError(String(e?.message || e));
     }
@@ -106,13 +113,9 @@ export default function AuthPage() {
         </label>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn-primary" onClick={register}>
-            Register
-          </button>
+          <button className="btn-primary" onClick={register}>Register</button>
           <button onClick={login}>Login</button>
-          <button className="btn-danger" onClick={logout}>
-            Logout
-          </button>
+          <button className="btn-danger" onClick={logout}>Logout</button>
           <button onClick={loadMe}>Refresh</button>
         </div>
       </div>
