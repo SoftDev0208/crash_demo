@@ -145,7 +145,7 @@ export default function LimboPage() {
     }
 
     const target = Number(payout);
-    if (!Number.isFinite(target) || target < 1.01) {
+    if (!Number.isFinite(target)) {
       setError("Invalid payout / target multiplier.");
       return;
     }

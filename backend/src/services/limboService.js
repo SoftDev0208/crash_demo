@@ -36,7 +36,7 @@ export async function placeLimboBet({ userId, amount, targetMultiplier, houseEdg
   if (stake <= 0n) throw new Error("INVALID_AMOUNT");
 
   const target = Number(targetMultiplier);
-  if (!Number.isFinite(target) || target < 1.01 || target > 100000) {
+  if (!Number.isFinite(target) || target > 100000) {
     throw new Error("INVALID_TARGET_MULTIPLIER");
   }
 
